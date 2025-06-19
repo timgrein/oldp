@@ -38,6 +38,10 @@ test-image:
 	@echo "--- 🔨 Building container image ---"
 	$(CONTAINER_ENGINE) run --rm openlegaldata/oldp:${IMAGE_TAG} make test
 
+push-image:
+	@echo "--- 🚀 Push container image to hub ---"
+	$(CONTAINER_ENGINE) push openlegaldata/oldp:${IMAGE_TAG}
+
 up:
 	@echo "--- 🚀 Container compose up: all services ---"
 	$(CONTAINER_ENGINE) compose up

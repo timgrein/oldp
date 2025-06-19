@@ -86,12 +86,19 @@ drop table references_lawreferencemarker;
 
 ## Cache
 
-```
+```bash
 # run in production shell
 from django.core.cache import cache
 
 # Empty specific cache
 cache.delete('my_url')
+
+# anonymous
+# "view_cache_%s_anonymous" % (request.get_full_path(), user)
+
+# Homepage
+cache.has_key("view_cache_/_anonymous")
+
 
 # Empty all cache
 cache.clear()

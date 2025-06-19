@@ -14,7 +14,7 @@ urlpatterns = [
         name="index",
     ),
     re_path(
-        r"^state/(?P<state_slug>[-a-z0-9]+)/$",
+        r"^state/(?P<state_slug>[-a-z0-9_]+)/$",
         cache_per_user(settings.CACHE_TTL)(views.CourtListView.as_view()),
         name="index_state",
     ),
@@ -29,7 +29,7 @@ urlpatterns = [
         name="autocomplete",
     ),
     re_path(
-        r"^(?P<court_slug>[-a-z0-9]+)/$",
+        r"^(?P<court_slug>[-a-z0-9_]+)/$",
         cache_per_user(settings.CACHE_TTL)(views.CourtCasesListView.as_view()),
         name="detail",
     ),
