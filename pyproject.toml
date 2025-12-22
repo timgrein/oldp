@@ -18,8 +18,8 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-  # Base requirements
-  "Pillow>=7.1.0",
+# Base requirements
+"Pillow>=7.1.0",
 "python-dateutil>=2.6.1",
 "python-slugify>=1.2.1",
 "requests>=2.20.1",
@@ -70,15 +70,6 @@ dependencies = [
 "flex", #==6.14.0
 "swagger-spec-validator", #==2.4.3
 
-# Database
-# -------------------------
-# on mac: brew install mysql pkg-config
-"mysqlclient>=2.2.5",
-
-# haystack supports only es <= 7
-"elasticsearch==7.17.12",
-"elasticsearch-dsl==7.4.1",
-
 # Used for UML chart https://github.com/django-extensions/django-extensions
 # django-extensions==2.1.9
 # django-extensions #>=2.1.9
@@ -106,7 +97,18 @@ processing = [
   "cssselect>=1.3.0",
   "lxml>=5.3.2",
 ]
-
+mysql = [
+  # on mac: brew install mysql pkg-config
+  "mysqlclient>=2.2.5",
+]
+search = [
+  # haystack supports only es <= 7
+  "elasticsearch==7.17.12",
+  "elasticsearch-dsl==7.4.1",
+]
+all = [
+  "oldp[dev,theme-de,prod,processing,mysql,search]"
+]
 
 [project.urls]
 homepage = "https://openlegaldata.io"
@@ -114,7 +116,7 @@ homepage = "https://openlegaldata.io"
 
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
-include = ["oldp"]  # package names should match these glob patterns (["*"] by default)
+include = ["oldp*"]  # package names should match these glob patterns (["*"] by default)
 exclude = []  # exclude packages matching these glob patterns (empty by default)
 namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 

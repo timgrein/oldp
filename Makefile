@@ -13,7 +13,7 @@ IMAGE_TAG=v2024b
 
 install-package:
 	@echo "--- 🚀 Installing project dependencies ---"
-	pip install -e ".[dev]"
+	uv pip install -e ".[dev]"
 
 lint:
 	@echo "--- 🧹 Running linters ---"

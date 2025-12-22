@@ -91,6 +91,7 @@ node_modules/*
 venv/
 ENV/
 env/
+.venv/
 
 # Spyder project settings
 .spyderproject
@@ -99,6 +100,8 @@ env/
 db.sqlite3
 test.db
 dev.db
+
+.ruff_cache
 
 # Django
 #*/migrations/*

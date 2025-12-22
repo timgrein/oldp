@@ -63,7 +63,7 @@ ENV PYTHONPATH=/oldp/
 # RUN pip install -r requirements/base.txt
 
 ADD pyproject.toml ./
-RUN pip install -e ".[dev,prod,processing]"
+RUN pip install -e ".[all]"
 
 # fix for coreapi
 RUN pip install setuptools
@@ -78,7 +78,7 @@ RUN python manage.py collectstatic --no-input
 # Locale
 RUN python manage.py compilemessages --l de --l en
 
-# TODO local install
+# Local install so we can mount it
 RUN git clone https://github.com/openlegaldata/oldp-de.git /oldp-de && pip install -e /oldp-de
 
 # expose the port 8000
