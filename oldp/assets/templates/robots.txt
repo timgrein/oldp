@@ -8,4 +8,19 @@ User-agent: AhrefsBot
 Disallow: /
 
 User-agent: XoviBot
-Disallow: / 
+Disallow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: YandexBot
+Disallow: /
+
+User-agent: bingbot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: PetalBot
+Disallow: /
