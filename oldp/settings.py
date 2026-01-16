@@ -529,9 +529,16 @@ class TestConfiguration(BaseConfiguration):
     DEBUG = True
 
     COMPRESS_OFFLINE = False
+    COMPRESS_ENABLED = False
+    COMPRESS_PRECOMPILERS = []  # Disable SCSS compilation in tests
 
     DATABASES = values.DatabaseURLValue("sqlite:///test.db")
     ELASTICSEARCH_INDEX = values.Value("oldp_test")
+
+    # Disable external service tests by default in CI
+    TEST_WITH_ES = False
+    TEST_WITH_WEB = False
+    TEST_WITH_SELENIUM = False
 
     # STATICFILES_STORAGE/STORAGES are mutually exclusive.
     # STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
