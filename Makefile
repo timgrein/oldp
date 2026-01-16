@@ -7,33 +7,115 @@ CONTAINER_ENGINE ?= $(shell \
   fi \
 )
 
+# Detect package manager (prefer uv over pip)
+PYTHON_PKG_MANAGER ?= $(shell \
+  if command -v uv >/dev/null 2>&1; then \
+    echo "uv"; \
+  else \
+    echo "pip"; \
+  fi \
+)
+
 IMAGE_TAG=v2024b
+VENV_DIR=.venv
+VENV_BIN=$(VENV_DIR)/bin
+VENV_PYTHON=$(VENV_BIN)/python
+VENV_PKG_MANAGER=$(VENV_BIN)/$(PYTHON_PKG_MANAGER)
 
-.PHONY: install-package lint lint-check test test-coverage build-image test-image up up-services
+.PHONY: help venv clean-venv install lint lint-check test test-coverage build-image test-image up up-services
 
-install-package:
+help:
+	@echo "Available commands:"
+	@echo ""
+	@echo "  make venv              - Create virtual environment ($(VENV_DIR))"
+	@echo "  make clean-venv        - Remove virtual environment"
+	@echo "  make install           - Install project dependencies in venv"
+	@echo "  make lint              - Run linters (format + fix)"
+	@echo "  make lint-check        - Check linting without fixing"
+	@echo "  make test              - Run test suite"
+	@echo "  make test-coverage     - Run tests with coverage report"
+	@echo ""
+	@echo "Container commands:"
+	@echo "  make build-image       - Build container image ($(CONTAINER_ENGINE))"
+	@echo "  make test-image        - Test container image"
+	@echo "  make push-image        - Push container image to registry"
+	@echo "  make up                - Start all services"
+	@echo "  make up-services       - Start db and search services only"
+	@echo "  make migrate           - Apply database migrations"
+	@echo "  make load-dummy-data   - Load test fixtures"
+	@echo "  make rebuild-index     - Rebuild search index"
+	@echo "  make compile-locale    - Compile translations"
+
+venv:
+	@echo "--- 🐍 Creating virtual environment ---"
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		python3 -m venv $(VENV_DIR); \
+		echo "✅ Virtual environment created at $(VENV_DIR)"; \
+		echo ""; \
+		echo "To activate it, run:"; \
+		echo "  source $(VENV_DIR)/bin/activate"; \
+	else \
+		echo "✅ Virtual environment already exists at $(VENV_DIR)"; \
+	fi
+
+clean-venv:
+	@echo "--- 🗑️  Removing virtual environment ---"
+	@if [ -d "$(VENV_DIR)" ]; then \
+		rm -rf $(VENV_DIR); \
+		echo "✅ Virtual environment removed"; \
+	else \
+		echo "⚠️  Virtual environment does not exist"; \
+	fi
+
+install:
 	@echo "--- 🚀 Installing project dependencies ---"
-	uv pip install -e ".[dev]"
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "⚠️  Virtual environment not found. Creating it first..."; \
+		$(MAKE) venv; \
+	fi
+	@echo "Using package manager: $(PYTHON_PKG_MANAGER)"
+	@if [ "$(PYTHON_PKG_MANAGER)" = "uv" ]; then \
+		uv pip install --python $(VENV_PYTHON) -e ".[dev,search,processing]"; \
+	else \
+		$(VENV_PKG_MANAGER) install -e ".[dev,search,processing]"; \
+	fi
+	@echo "✅ Dependencies installed in virtual environment"
 
 lint:
 	@echo "--- 🧹 Running linters ---"
-	ruff format . 			# running ruff formatting
-	ruff check . --fix  	# running ruff linting
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "⚠️  Virtual environment not found. Please run 'make install' first."; \
+		exit 1; \
+	fi
+	$(VENV_BIN)/ruff format . 			# running ruff formatting
+	$(VENV_BIN)/ruff check . --fix  	# running ruff linting
 
 lint-check:
 	@echo "--- 🧹 Check is project is linted ---"
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "⚠️  Virtual environment not found. Please run 'make install' first."; \
+		exit 1; \
+	fi
 	# Required for CI to work, otherwise it will just pass
-	ruff format .						    # running ruff formatting
-	ruff check **/*.py 						        # running ruff linting
+	$(VENV_BIN)/ruff format .						    # running ruff formatting
+	$(VENV_BIN)/ruff check **/*.py 						        # running ruff linting
 
 test:
 	@echo "--- 🧪 Running tests ---"
-	python manage.py test
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "⚠️  Virtual environment not found. Please run 'make install' first."; \
+		exit 1; \
+	fi
+	DJANGO_CONFIGURATION=TestConfiguration $(VENV_PYTHON) manage.py test
 
 test-coverage:
 	@echo "--- 🧪 Running tests with coverage ---"
-	coverage run manage.py test
-	coverage report --fail-under=80
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "⚠️  Virtual environment not found. Please run 'make install' first."; \
+		exit 1; \
+	fi
+	DJANGO_CONFIGURATION=TestConfiguration $(VENV_BIN)/coverage run manage.py test
+	$(VENV_BIN)/coverage report --fail-under=80
 
 build-image:
 	@echo "--- 🔨 Building container image ---"
