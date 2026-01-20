@@ -233,20 +233,26 @@ curl -X GET "https://de.openlegaldata.io/api/cases/search/?text=urheberrecht+AND
 
 **Note:** Write operations require a token with appropriate `write` permissions.
 
+### Case Creation API
+
+For detailed documentation on creating cases programmatically, including automatic court resolution, duplicate handling, and reference extraction, see the [Case Creation API Documentation](api/case-creation.md).
+
 **Create a new case (requires cases:write permission):**
 ```bash
-curl -X POST "https://de.openlegaldata.io/api/cases/" \
+curl -X POST "https://de.openlegaldata.io/api/cases/?extract_refs=true" \
   -H "Authorization: Token YOUR_API_TOKEN_HERE" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "title": "Case Title",
-    "court_id": 3,
-    "date": "2024-01-15",
-    "file_number": "1 U 123/24",
-    "content": "Full case content..."
+    "court_name": "Bundesgerichtshof",
+    "file_number": "I ZR 123/21",
+    "date": "2021-05-15",
+    "content": "<p>Full case content in HTML...</p>",
+    "type": "Urteil"
   }'
 ```
+
+The API automatically resolves the court from the `court_name` field. Use `?extract_refs=true` (default) to extract legal references from the content, or `?extract_refs=false` to disable.
 
 **Update an existing case (requires cases:write permission):**
 ```bash
