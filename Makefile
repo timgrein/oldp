@@ -22,7 +22,7 @@ VENV_BIN=$(VENV_DIR)/bin
 VENV_PYTHON=$(VENV_BIN)/python
 VENV_PKG_MANAGER=$(VENV_BIN)/$(PYTHON_PKG_MANAGER)
 
-.PHONY: help venv clean-venv install lint lint-check test test-coverage build-image test-image up up-services
+.PHONY: help venv clean-venv install lint lint-check test test-coverage docs build-image test-image up up-services restart logs migrate load-dummy-data load-dummy-users rebuild-index compile-locale
 
 help:
 	@echo "Available commands:"
@@ -34,6 +34,7 @@ help:
 	@echo "  make lint-check        - Check linting without fixing"
 	@echo "  make test              - Run test suite"
 	@echo "  make test-coverage     - Run tests with coverage report"
+	@echo "  make docs              - Build documentation with Sphinx"
 	@echo ""
 	@echo "Container commands:"
 	@echo "  make build-image       - Build container image ($(CONTAINER_ENGINE))"
@@ -43,6 +44,7 @@ help:
 	@echo "  make up-services       - Start db and search services only"
 	@echo "  make migrate           - Apply database migrations"
 	@echo "  make load-dummy-data   - Load test fixtures"
+	@echo "  make load-dummy-users  - Load dummy users (admin, user)"
 	@echo "  make rebuild-index     - Rebuild search index"
 	@echo "  make compile-locale    - Compile translations"
 
@@ -75,9 +77,9 @@ install:
 	fi
 	@echo "Using package manager: $(PYTHON_PKG_MANAGER)"
 	@if [ "$(PYTHON_PKG_MANAGER)" = "uv" ]; then \
-		uv pip install --python $(VENV_PYTHON) -e ".[dev,search,processing]"; \
+		uv pip install --python $(VENV_PYTHON) -e ".[dev,search,processing,docs]"; \
 	else \
-		$(VENV_PKG_MANAGER) install -e ".[dev,search,processing]"; \
+		$(VENV_PKG_MANAGER) install -e ".[dev,search,processing,docs]"; \
 	fi
 	@echo "✅ Dependencies installed in virtual environment"
 
@@ -117,6 +119,23 @@ test-coverage:
 	DJANGO_CONFIGURATION=TestConfiguration $(VENV_BIN)/coverage run manage.py test
 	$(VENV_BIN)/coverage report --fail-under=80
 
+docs:
+	@echo "--- 📚 Building documentation ---"
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "⚠️  Virtual environment not found. Please run 'make install' first."; \
+		exit 1; \
+	fi
+	@echo "Installing docs dependencies..."
+	@if [ "$(PYTHON_PKG_MANAGER)" = "uv" ]; then \
+		uv pip install --python $(VENV_PYTHON) -e ".[docs]"; \
+	else \
+		$(VENV_PKG_MANAGER) install -e ".[docs]"; \
+	fi
+	@echo "Building HTML documentation..."
+	@cd docs && $(MAKE) -f Makefile html SPHINXBUILD=../$(VENV_BIN)/sphinx-build
+	@echo "✅ Documentation built successfully"
+	@echo "📖 Open docs/_build/html/index.html in your browser to view"
+
 build-image:
 	@echo "--- 🔨 Building container image ---"
 	$(CONTAINER_ENGINE) build -t openlegaldata/oldp:${IMAGE_TAG} -f Dockerfile .
@@ -131,11 +150,24 @@ push-image:
 
 up:
 	@echo "--- 🚀 Container compose up: all services ---"
-	$(CONTAINER_ENGINE) compose up
+	@echo "Web server will start at: http://localhost:8000"
+	$(CONTAINER_ENGINE) compose up -d
 
 up-services:
 	@echo "--- 🚀 Container compose up: db search (all non-app services) ---"
 	$(CONTAINER_ENGINE) compose up db search
+
+down:
+	@echo "--- ❌ Container compose down: all services ---"
+	$(CONTAINER_ENGINE) compose down
+
+restart:
+	@echo "--- 🔄 Container compose restart: all services ---"
+	$(CONTAINER_ENGINE) compose restart
+
+logs:
+	@echo "--- 📜 Container compose tailing logs ---"
+	$(CONTAINER_ENGINE) compose logs -f
 
 migrate:
 	@echo "--- 🔨 Apply database migrations using app container ---"
@@ -150,6 +182,10 @@ load-dummy-data:
 		courts/courts.json \
 		laws/laws.json \
 		cases/cases.json
+
+load-dummy-users:
+	@echo "--- 🔨 Load dummy users using app container ---"
+	$(CONTAINER_ENGINE) compose exec app python manage.py load_dummy_users
 
 rebuild-index:
 	@echo "--- 🔨 Rebuild search index using app container ---"

@@ -29,7 +29,7 @@ dependencies = [
 "msgpack>=0.3.0,<0.6",  # See spacy issue: https://github.com/explosion/spaCy/issues/2995
 
 # Django
-"django==5.1.4",  # stable version as of Jan 2025
+"django==5.1.15",  # stable version as of Jan 2025 + security patch
 "dj-database-url", #>=0.5.0
 "django-appconf", #>=1.0.2
 "django-configurations", #>=2.1
@@ -110,8 +110,13 @@ search = [
   "elasticsearch==7.17.12",
   "elasticsearch-dsl==7.4.1",
 ]
+docs = [
+  "sphinx>=7.0",
+  "sphinx-rtd-theme>=2.0",
+  "myst-parser>=2.0",
+]
 all = [
-  "oldp[dev,theme-de,prod,processing,mysql,search]"
+  "oldp[dev,theme-de,prod,processing,mysql,search,docs]"
 ]
 
 [project.urls]
