@@ -5,13 +5,13 @@ import logging
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
 from django.db import models
-from django.db.models.signals import pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
+from django.utils.translation import gettext_lazy as _
 
 from oldp.apps.search.models import RelatedContent, SearchableContent
 from oldp.apps.topics.models import TopicContent
@@ -22,10 +22,10 @@ logger = logging.getLogger(__name__)
 def validate_revision_date(value):
     """Validate that revision date is reasonable (not in future, not too old)."""
     if value > timezone.now().date():
-        raise ValidationError("Revision date cannot be in the future.")
+        raise ValidationError(_("Revision date cannot be in the future."))
     if value < datetime.date(1800, 1, 1):
         raise ValidationError(
-            "Revision date cannot be before 1800 (unreasonably old for German laws)."
+            _("Revision date cannot be before 1800 (unreasonably old for German laws).")
         )
 
 
@@ -56,6 +56,16 @@ class LawBook(TopicContent):
         help_text="Is true if this is the latest revision of this book",
         db_index=True,
     )
+    created_date = models.DateTimeField(
+        auto_now_add=True,
+        help_text="Entry is created at this date time",
+        db_index=True,
+    )
+    updated_date = models.DateTimeField(
+        auto_now=True,
+        help_text="Date time of last change",
+        db_index=True,
+    )
     created_by_token = models.ForeignKey(
         "accounts.APIToken",
         null=True,
@@ -63,6 +73,17 @@ class LawBook(TopicContent):
         on_delete=models.SET_NULL,
         related_name="created_lawbooks",
         help_text="API token used to create this law book via the API",
+    )
+    review_status = models.CharField(
+        max_length=10,
+        choices=[
+            ("pending", "Pending"),
+            ("accepted", "Accepted"),
+            ("rejected", "Rejected"),
+        ],
+        default="accepted",
+        db_index=True,
+        help_text="Review status for API-submitted law books",
     )
 
     # icon = models.CharField(max_length=10, default='§')
@@ -77,6 +98,11 @@ class LawBook(TopicContent):
 
     class Meta:
         unique_together = (("slug", "revision_date"),)
+        indexes = [
+            models.Index(
+                fields=["code", "latest"], name="laws_lawbook_code_latest_idx"
+            ),
+        ]
 
     def clean(self):
         """Validate model data before saving."""
@@ -239,6 +265,17 @@ class Law(SearchableContent, models.Model):
         related_name="created_laws",
         help_text="API token used to create this law via the API",
     )
+    review_status = models.CharField(
+        max_length=10,
+        choices=[
+            ("pending", "Pending"),
+            ("accepted", "Accepted"),
+            ("rejected", "Rejected"),
+        ],
+        default="accepted",
+        db_index=True,
+        help_text="Review status for API-submitted laws",
+    )
 
     # Internal fields (non db)
     reference_markers = None
@@ -255,6 +292,11 @@ class Law(SearchableContent, models.Model):
 
     class Meta:
         unique_together = (("book", "slug"),)
+        indexes = [
+            models.Index(fields=["previous"], name="laws_law_previous_idx"),
+            models.Index(fields=["book", "order"], name="laws_law_book_order_idx"),
+            models.Index(fields=["section"], name="laws_law_section_idx"),
+        ]
 
     def __str__(self):
         return "Law(%s §%s, title=%s)" % (self.book.code, self.slug, self.title)
@@ -291,9 +333,7 @@ class Law(SearchableContent, models.Model):
             return None
         except Law.MultipleObjectsReturned:
             # Data corruption: multiple laws pointing to same previous
-            logger.error(
-                f"Multiple laws found with previous={self.id} (Law {self.pk})"
-            )
+            logger.error(f"Multiple laws found with previous={self.id} (Law {self.pk})")
             return Law.objects.filter(previous=self.id).first()
 
     # def get_previous_url(self):
@@ -370,10 +410,11 @@ class Law(SearchableContent, models.Model):
                 return latest_book.get_absolute_url()
         except LawBook.DoesNotExist:
             # No latest revision found, return current URL
-            logger.warning(
-                f"No latest revision found for book code {self.book.code}"
-            )
+            logger.warning(f"No latest revision found for book code {self.book.code}")
             return self.get_absolute_url()
+
+    def get_api_url(self):
+        return "/api/laws/{}/".format(self.pk)
 
     def get_admin_url(self):
         return reverse("admin:laws_law_change", args=(self.pk,))
@@ -423,10 +464,6 @@ def pre_save_law(sender, instance: Law, *args, **kwargs):
     pass
 
 
-# Cache invalidation signal handlers
-from django.db.models.signals import post_save, post_delete
-
-
 @receiver(post_save, sender=LawBook)
 @receiver(post_delete, sender=LawBook)
 def invalidate_lawbook_cache(sender, instance, **kwargs):
@@ -451,9 +488,7 @@ def invalidate_law_cache(sender, instance, **kwargs):
     # Clear cache for this specific law
     # Note: delete_pattern is only available in Redis backend, not LocMemCache
     if hasattr(cache, "delete_pattern"):
-        cache.delete_pattern(
-            f"view_cache_*/laws/{instance.book.slug}/{instance.slug}*"
-        )
+        cache.delete_pattern(f"view_cache_*/laws/{instance.book.slug}/{instance.slug}*")
         logger.debug(f"Invalidated cache for law: {instance.book.slug}/{instance.slug}")
     # Silently skip cache invalidation when using LocMemCache (test environment)
 
@@ -465,3 +500,10 @@ class RelatedLaw(RelatedContent):
     related_content = models.ForeignKey(
         Law, related_name="related_id", on_delete=models.CASCADE
     )
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["seed_content", "-score"], name="laws_rellaw_seed_score_idx"
+            ),
+        ]

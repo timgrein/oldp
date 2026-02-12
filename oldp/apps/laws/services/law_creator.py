@@ -1,6 +1,4 @@
-"""
-Law creator service for creating laws within law books.
-"""
+"""Law creator service for creating laws within law books."""
 
 import logging
 from typing import Optional
@@ -14,8 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class LawCreator:
-    """
-    Service for creating laws within law books.
+    """Service for creating laws within law books.
 
     This service handles:
     - Law book resolution from code
@@ -29,8 +26,7 @@ class LawCreator:
         revision_date=None,
         use_latest: bool = True,
     ) -> LawBook:
-        """
-        Resolve a law book from code and optional revision date.
+        """Resolve a law book from code and optional revision date.
 
         Args:
             book_code: Law book code (e.g., "BGB", "StGB")
@@ -46,18 +42,17 @@ class LawCreator:
         if not book_code:
             raise LawBookNotFoundError("Book code is required")
 
-        try:
-            if revision_date:
-                # Find specific revision
-                return LawBook.objects.get(code=book_code, revision_date=revision_date)
-            elif use_latest:
-                # Find latest revision
-                return LawBook.objects.get(code=book_code, latest=True)
-            else:
-                raise LawBookNotFoundError(
-                    "Either revision_date or use_latest=True is required"
-                )
-        except LawBook.DoesNotExist:
+        if revision_date:
+            qs = LawBook.objects.filter(code=book_code, revision_date=revision_date)
+        elif use_latest:
+            qs = LawBook.objects.filter(code=book_code, latest=True)
+        else:
+            raise LawBookNotFoundError(
+                "Either revision_date or use_latest=True is required"
+            )
+
+        book = qs.order_by("-pk").first()
+        if book is None:
             if revision_date:
                 raise LawBookNotFoundError(
                     f"Law book with code '{book_code}' and revision date '{revision_date}' not found"
@@ -66,10 +61,10 @@ class LawCreator:
                 raise LawBookNotFoundError(
                     f"No latest revision found for law book code '{book_code}'"
                 )
+        return book
 
     def check_duplicate(self, book: LawBook, slug: str) -> bool:
-        """
-        Check if a law with the same book and slug already exists.
+        """Check if a law with the same book and slug already exists.
 
         Args:
             book: LawBook instance
@@ -95,8 +90,7 @@ class LawCreator:
         footnotes: Optional[str] = None,
         api_token=None,
     ) -> Law:
-        """
-        Create a new law within a law book.
+        """Create a new law within a law book.
 
         Args:
             book_code: Law book code (e.g., "BGB", "StGB")
@@ -149,7 +143,11 @@ class LawCreator:
 
         # Track the API token if provided
         if api_token is not None:
-            law.created_by_token = api_token
+            from oldp.apps.accounts.models import APIToken
+
+            if isinstance(api_token, APIToken):
+                law.created_by_token = api_token
+                law.review_status = "pending"
 
         law.save()
 

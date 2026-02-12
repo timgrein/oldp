@@ -1,6 +1,4 @@
-"""
-Case creator service for creating cases with automatic FK resolution and processing.
-"""
+"""Case creator service for creating cases with automatic FK resolution and processing."""
 
 import logging
 from typing import Optional
@@ -8,13 +6,13 @@ from typing import Optional
 from oldp.apps.cases.exceptions import DuplicateCaseError
 from oldp.apps.cases.models import Case
 from oldp.apps.cases.services.court_resolver import CourtResolver
+from oldp.apps.sources.models import Source
 
 logger = logging.getLogger(__name__)
 
 
 class CaseCreator:
-    """
-    Service for creating cases with automatic FK resolution and processing.
+    """Service for creating cases with automatic FK resolution and processing.
 
     This service encapsulates the case creation logic including:
     - Court resolution from name
@@ -28,8 +26,7 @@ class CaseCreator:
         court_resolver: Optional[CourtResolver] = None,
         extract_refs: bool = True,
     ):
-        """
-        Initialize the case creator.
+        """Initialize the case creator.
 
         Args:
             court_resolver: Optional CourtResolver instance (creates default if None)
@@ -39,8 +36,7 @@ class CaseCreator:
         self.extract_refs = extract_refs
 
     def check_duplicate(self, court, file_number: str) -> bool:
-        """
-        Check if a case with the same court and file_number already exists.
+        """Check if a case with the same court and file_number already exists.
 
         Args:
             court: Court instance
@@ -52,8 +48,7 @@ class CaseCreator:
         return Case.objects.filter(court=court, file_number=file_number).exists()
 
     def _extract_references(self, case: Case) -> Case:
-        """
-        Extract law and case references from case content.
+        """Extract law and case references from case content.
 
         Args:
             case: Case instance with content
@@ -76,6 +71,31 @@ class CaseCreator:
             logger.warning("Failed to extract references for case %s: %s", case.pk, e)
             return case
 
+    def resolve_source(
+        self,
+        source_name: str,
+        source_homepage: str = "",
+    ) -> Source:
+        """Resolve a source by name, creating it if it does not exist.
+
+        Lookup is based on name only. Homepage is used only when creating a
+        new source.
+
+        Args:
+            source_name: Name of the source to look up or create.
+            source_homepage: Homepage URL, used as default when creating.
+
+        Returns:
+            Source instance.
+        """
+        source, created = Source.objects.get_or_create(
+            name=source_name,
+            defaults={"homepage": source_homepage or ""},
+        )
+        if created:
+            logger.info("Created new source: %s (id=%s)", source.name, source.pk)
+        return source
+
     def create_case(
         self,
         court_name: str,
@@ -86,13 +106,13 @@ class CaseCreator:
         ecli: Optional[str] = None,
         abstract: Optional[str] = None,
         title: Optional[str] = None,
-        private: bool = False,
         court_code: Optional[str] = None,
         api_token=None,
         extract_refs: Optional[bool] = None,
+        source_name: Optional[str] = None,
+        source_homepage: Optional[str] = None,
     ) -> Case:
-        """
-        Create a new case with automatic processing.
+        """Create a new case with automatic processing.
 
         Args:
             court_name: Name of the court (will be resolved to Court FK)
@@ -103,10 +123,11 @@ class CaseCreator:
             ecli: European Case Law Identifier
             abstract: Case summary in HTML
             title: Case title
-            private: Whether the case is private
             court_code: Optional court code for resolution
             api_token: APIToken used for creation (for tracking)
             extract_refs: Whether to extract references (overrides instance setting)
+            source_name: Optional source name for lookup/creation
+            source_homepage: Optional homepage URL for new source creation
 
         Returns:
             Created Case instance
@@ -124,10 +145,16 @@ class CaseCreator:
                 f"A case with court '{court.name}' and file number '{file_number}' already exists."
             )
 
+        # Resolve source
+        if source_name:
+            source = self.resolve_source(source_name, source_homepage or "")
+        else:
+            source = Source.objects.get(pk=Source.DEFAULT_ID)
+
         # Cases created via API (with token) require manual approval
-        # They are set to private regardless of the request value
+        review_status = "accepted"
         if api_token is not None:
-            private = True
+            review_status = "pending"
 
         # Create the case
         case = Case(
@@ -140,7 +167,8 @@ class CaseCreator:
             ecli=ecli or "",
             abstract=abstract or "",
             title=title or "",
-            private=private,
+            review_status=review_status,
+            source=source,
         )
 
         # Set the slug based on court and date

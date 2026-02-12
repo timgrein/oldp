@@ -41,7 +41,9 @@ class BaseConfiguration(Configuration):
 
     INTERNAL_IPS = values.TupleValue(("127.0.0.1",))
 
-    ALLOWED_HOSTS = []
+    ALLOWED_HOSTS = values.ListValue(["127.0.0.1", "localhost"])
+
+    CSRF_TRUSTED_ORIGINS = values.ListValue([])
 
     # Application definition
     INSTALLED_APPS = [
@@ -388,7 +390,7 @@ class BaseConfiguration(Configuration):
         ),
         # Auth
         "DEFAULT_AUTHENTICATION_CLASSES": (
-            "rest_framework.authentication.TokenAuthentication",
+            "oldp.apps.accounts.authentication.CombinedTokenAuthentication",
             "rest_framework.authentication.SessionAuthentication",
         ),
         "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.AnonRateThrottle",),
@@ -411,19 +413,26 @@ class BaseConfiguration(Configuration):
             "oldp.apps.cases.processing.processing_steps.assign_court",
             "oldp.apps.cases.processing.processing_steps.extract_refs",
             "oldp.apps.cases.processing.processing_steps.generate_related",
-            "oldp.apps.cases.processing.processing_steps.set_private_true",
-            "oldp.apps.cases.processing.processing_steps.set_private_false",
+            "oldp.apps.cases.processing.processing_steps.set_review_pending",
+            "oldp.apps.cases.processing.processing_steps.set_review_accepted",
+            "oldp.apps.cases.processing.processing_steps.set_review_rejected",
         ],
         "Law": [
             "oldp.apps.laws.processing.processing_steps.extract_refs",
+            "oldp.apps.laws.processing.processing_steps.set_review_pending",
+            "oldp.apps.laws.processing.processing_steps.set_review_accepted",
         ],
         "LawBook": [
             "oldp.apps.topics.processing.processing_steps.assign_topics_to_law_book",
+            "oldp.apps.laws.processing.processing_steps.set_lawbook_review_pending",
+            "oldp.apps.laws.processing.processing_steps.set_lawbook_review_accepted",
         ],
         "Court": [
             "oldp.apps.courts.processing.processing_steps.enrich_from_wikipedia",
             "oldp.apps.courts.processing.processing_steps.set_aliases",
             "oldp.apps.courts.processing.processing_steps.assign_jurisdiction",
+            "oldp.apps.courts.processing.processing_steps.set_review_pending",
+            "oldp.apps.courts.processing.processing_steps.set_review_accepted",
         ],
         "Reference": [
             "oldp.apps.references.processing.processing_steps.assign_refs",
@@ -519,23 +528,13 @@ class DevConfiguration(BaseConfiguration):
 
     COMPRESS_OFFLINE = False
 
-    @property
-    def INSTALLED_APPS(self):
-        """Apps that are only available in debug mode"""
-        return (
-            [
-                # 'django_extensions',  # from generating UML chart
-            ]
-            + super().INSTALLED_APPS
-            + [
-                "debug_toolbar",
-            ]
-        )
+    INSTALLED_APPS = BaseConfiguration.INSTALLED_APPS + [
+        "debug_toolbar",
+    ]
 
-    @property
-    def MIDDLEWARE(self):
-        """Middlewares that are only available in debug mode"""
-        return super().MIDDLEWARE + ["debug_toolbar.middleware.DebugToolbarMiddleware"]
+    MIDDLEWARE = BaseConfiguration.MIDDLEWARE + [
+        "debug_toolbar.middleware.DebugToolbarMiddleware",
+    ]
 
 
 class TestConfiguration(BaseConfiguration):
@@ -550,10 +549,30 @@ class TestConfiguration(BaseConfiguration):
     DATABASES = values.DatabaseURLValue("sqlite:///test.db")
     ELASTICSEARCH_INDEX = values.Value("oldp_test")
 
-    # Disable external service tests by default in CI
-    TEST_WITH_ES = False
+    # Control mocking: True = use mocks (default), False = use real ES
+    MOCK_ES_TESTS = values.BooleanValue(True, environ_name="MOCK_ES_TESTS")
+
+    # Enable ES tests by default (they now run with mocks)
+    TEST_WITH_ES = True
     TEST_WITH_WEB = False
     TEST_WITH_SELENIUM = False
+
+    @property
+    def HAYSTACK_CONNECTIONS(self):
+        """Configure Haystack to use mock or real Elasticsearch based on settings."""
+        if self.MOCK_ES_TESTS:
+            return {
+                "default": {
+                    "ENGINE": "oldp.apps.search.mock_backend.MockElasticsearchEngine",
+                }
+            }
+        return {
+            "default": {
+                "ENGINE": "oldp.apps.search.search_backend.SearchEngine",
+                "URL": "http://localhost:9200/",
+                "INDEX_NAME": "oldp_test",
+            }
+        }
 
     # STATICFILES_STORAGE/STORAGES are mutually exclusive.
     # STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
@@ -565,15 +584,35 @@ class TestConfiguration(BaseConfiguration):
         }
     }
 
-    # Override logging to reduce verbosity during tests
-    @property
-    def LOGGING(self):
-        """Set log level to INFO for tests to reduce noise"""
-        config = super().LOGGING.copy()
-        # Update oldp logger to INFO level instead of DEBUG
-        config["loggers"]["oldp"]["level"] = "INFO"
-        config["loggers"]["refex"]["level"] = "INFO"
-        return config
+    # Override logging to suppress expected logs during tests
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "console": {
+                "format": "%(asctime)s %(levelname)-8s %(name)-12s %(message)s",
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "console",
+                "level": "CRITICAL",  # Only show critical errors in console
+            },
+        },
+        "loggers": {
+            "": {  # root logger - suppress all but critical
+                "level": "CRITICAL",
+                "handlers": ["console"],
+            },
+            "django": {"level": "CRITICAL"},
+            "django.request": {"level": "CRITICAL"},
+            "oldp": {"level": "CRITICAL"},
+            "refex": {"level": "CRITICAL"},
+            "haystack": {"level": "CRITICAL"},
+            "elasticsearch": {"level": "CRITICAL"},
+        },
+    }
 
     @classmethod
     def post_setup(cls):

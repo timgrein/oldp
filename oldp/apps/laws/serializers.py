@@ -1,12 +1,14 @@
 from django.conf import settings as django_settings
-from drf_haystack.serializers import HaystackSerializer
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from oldp.api.mixins import ReviewStatusFieldMixin
 from oldp.apps.laws.models import Law, LawBook
 from oldp.apps.laws.search_indexes import LawIndex
+from oldp.apps.search.api import SearchResultSerializer
 
 
-class LawSerializer(serializers.ModelSerializer):
+class LawSerializer(ReviewStatusFieldMixin, serializers.ModelSerializer):
     class Meta:
         model = Law
         fields = (
@@ -22,17 +24,29 @@ class LawSerializer(serializers.ModelSerializer):
             "kurzue",
             "doknr",
             "order",
+            "review_status",
         )
         # depth = 2
 
 
-class LawBookSerializer(serializers.ModelSerializer):
+class LawBookSerializer(ReviewStatusFieldMixin, serializers.ModelSerializer):
     class Meta:
         model = LawBook
-        fields = ("id", "code", "slug", "title", "revision_date", "latest", "order")
+        fields = (
+            "id",
+            "code",
+            "slug",
+            "title",
+            "revision_date",
+            "latest",
+            "order",
+            "review_status",
+        )
 
 
-class LawSearchSerializer(HaystackSerializer):
+class LawSearchSerializer(SearchResultSerializer):
+    """Serializer for law search results."""
+
     id = serializers.SerializerMethodField()
 
     def get_id(self, obj):
@@ -44,9 +58,6 @@ class LawSearchSerializer(HaystackSerializer):
             "title",
             "text",
         ]
-        field_options = {
-            "book_code",
-        }
         index_classes = [LawIndex]
 
 
@@ -56,57 +67,44 @@ class LawSearchSerializer(HaystackSerializer):
 
 
 class LawBookCreateSerializer(serializers.Serializer):
-    """
-    Serializer for creating law books via API.
+    """Serializer for creating law books via API.
 
     Handles automatic revision management.
     """
 
     # Required fields
     code = serializers.CharField(
-        max_length=100,
-        help_text="Book code (e.g., 'BGB', 'StGB')"
+        max_length=100, help_text="Book code (e.g., 'BGB', 'StGB')"
     )
-    title = serializers.CharField(
-        max_length=250,
-        help_text="Full title of the book"
-    )
+    title = serializers.CharField(max_length=250, help_text="Full title of the book")
     revision_date = serializers.DateField(
         help_text="Date of this revision (YYYY-MM-DD format)"
     )
 
     # Optional fields
     order = serializers.IntegerField(
-        default=0,
-        min_value=0,
-        help_text="Display order (importance)"
+        default=0, min_value=0, help_text="Display order (importance)"
     )
     changelog = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Changelog as JSON array"
+        required=False, allow_blank=True, help_text="Changelog as JSON array"
     )
     footnotes = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Footnotes as JSON array"
+        required=False, allow_blank=True, help_text="Footnotes as JSON array"
     )
     sections = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Sections as JSON object"
+        required=False, allow_blank=True, help_text="Sections as JSON object"
     )
 
     def validate_code(self, value):
         """Validate book code."""
         if not value or not value.strip():
-            raise serializers.ValidationError("Book code cannot be empty.")
+            raise serializers.ValidationError(_("Book code cannot be empty."))
         return value.strip()
 
     def validate_title(self, value):
         """Validate book title."""
         if not value or not value.strip():
-            raise serializers.ValidationError("Book title cannot be empty.")
+            raise serializers.ValidationError(_("Book title cannot be empty."))
         return value.strip()
 
 
@@ -116,69 +114,55 @@ class LawBookCreateResponseSerializer(serializers.Serializer):
     id = serializers.IntegerField(help_text="Law book ID")
     slug = serializers.CharField(help_text="Law book slug")
     latest = serializers.BooleanField(help_text="Whether this is the latest revision")
+    review_status = serializers.CharField(help_text="Review status of the law book")
 
 
 class LawCreateSerializer(serializers.Serializer):
-    """
-    Serializer for creating laws via API.
+    """Serializer for creating laws via API.
 
     Accepts book_code instead of book FK, with automatic resolution.
     """
 
     # Required fields
     book_code = serializers.CharField(
-        max_length=100,
-        help_text="Law book code (e.g., 'BGB', 'StGB')"
+        max_length=100, help_text="Law book code (e.g., 'BGB', 'StGB')"
     )
     section = serializers.CharField(
-        max_length=200,
-        help_text="Section identifier (e.g., '§ 1', 'Art. 1')"
+        max_length=200, help_text="Section identifier (e.g., '§ 1', 'Art. 1')"
     )
-    title = serializers.CharField(
-        max_length=200,
-        help_text="Verbose title of the law"
-    )
-    content = serializers.CharField(
-        help_text="Law content in HTML format"
-    )
+    title = serializers.CharField(max_length=200, help_text="Verbose title of the law")
+    content = serializers.CharField(help_text="Law content in HTML format")
 
     # Optional fields
     revision_date = serializers.DateField(
         required=False,
-        help_text="Specific book revision date (uses latest if not specified)"
+        help_text="Specific book revision date (uses latest if not specified)",
     )
     slug = serializers.SlugField(
         required=False,
         max_length=200,
-        help_text="Law slug (auto-generated from section if not provided)"
+        help_text="Law slug (auto-generated from section if not provided)",
     )
     order = serializers.IntegerField(
-        default=0,
-        min_value=0,
-        help_text="Order within the book"
+        default=0, min_value=0, help_text="Order within the book"
     )
     amtabk = serializers.CharField(
         required=False,
         max_length=200,
         allow_blank=True,
-        help_text="Official abbreviation"
+        help_text="Official abbreviation",
     )
     kurzue = serializers.CharField(
-        required=False,
-        max_length=200,
-        allow_blank=True,
-        help_text="Short title"
+        required=False, max_length=200, allow_blank=True, help_text="Short title"
     )
     doknr = serializers.CharField(
         required=False,
         max_length=200,
         allow_blank=True,
-        help_text="Document number from XML source"
+        help_text="Document number from XML source",
     )
     footnotes = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Footnotes as JSON array"
+        required=False, allow_blank=True, help_text="Footnotes as JSON array"
     )
 
     def _get_validation_settings(self):
@@ -193,13 +177,13 @@ class LawCreateSerializer(serializers.Serializer):
     def validate_book_code(self, value):
         """Validate book code."""
         if not value or not value.strip():
-            raise serializers.ValidationError("Book code cannot be empty.")
+            raise serializers.ValidationError(_("Book code cannot be empty."))
         return value.strip()
 
     def validate_section(self, value):
         """Validate section."""
         if not value or not value.strip():
-            raise serializers.ValidationError("Section cannot be empty.")
+            raise serializers.ValidationError(_("Section cannot be empty."))
         return value.strip()
 
     def validate_content(self, value):
@@ -210,11 +194,13 @@ class LawCreateSerializer(serializers.Serializer):
 
         if len(value) < min_length:
             raise serializers.ValidationError(
-                f"Content must be at least {min_length} characters."
+                _("Content must be at least %(min_length)s characters.")
+                % {"min_length": min_length}
             )
         if len(value) > max_length:
             raise serializers.ValidationError(
-                f"Content must not exceed {max_length} characters."
+                _("Content must not exceed %(max_length)s characters.")
+                % {"max_length": max_length}
             )
 
         return value
@@ -226,3 +212,4 @@ class LawCreateResponseSerializer(serializers.Serializer):
     id = serializers.IntegerField(help_text="Law ID")
     slug = serializers.CharField(help_text="Law slug")
     book_id = serializers.IntegerField(help_text="Law book ID")
+    review_status = serializers.CharField(help_text="Review status of the law")

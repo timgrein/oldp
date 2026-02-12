@@ -4,9 +4,25 @@ from rest_framework import authentication, exceptions
 from oldp.apps.accounts.models import APIToken
 
 
-class APITokenAuthentication(authentication.TokenAuthentication):
+class CombinedTokenAuthentication(authentication.TokenAuthentication):
+    """Authenticates against both DRF Token and custom APIToken models.
+
+    Tries the DRF built-in Token first, then falls back to APIToken.
     """
-    Custom token authentication using the APIToken model.
+
+    def authenticate_credentials(self, key):
+        # Try DRF's built-in Token model first
+        try:
+            return super().authenticate_credentials(key)
+        except exceptions.AuthenticationFailed:
+            pass
+
+        # Fall back to custom APIToken model
+        return APITokenAuthentication().authenticate_credentials(key)
+
+
+class APITokenAuthentication(authentication.TokenAuthentication):
+    """Custom token authentication using the APIToken model.
 
     This authentication class extends DRF's TokenAuthentication to use our
     custom APIToken model with support for:
@@ -20,8 +36,7 @@ class APITokenAuthentication(authentication.TokenAuthentication):
     keyword = "Token"
 
     def authenticate_credentials(self, key):
-        """
-        Authenticate the token and return the user and token.
+        """Authenticate the token and return the user and token.
 
         This method validates the token and checks for:
         - Token exists

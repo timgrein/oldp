@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessingStep(CaseProcessingStep, BaseGenerateRelated):
-    description = "Set private=True"
+    description = "Set review_status=rejected"
 
     def process(self, case: Case):
-        case.private = True
+        case.review_status = "rejected"
 
         return case

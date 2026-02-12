@@ -1,18 +1,18 @@
-import coreapi
-import coreschema
 import logging
+
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_haystack.filters import HaystackFilter
-from drf_haystack.viewsets import HaystackViewSet
 from rest_framework import status, viewsets
 from rest_framework.filters import OrderingFilter
+from rest_framework.mixins import ListModelMixin
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from oldp.api import SmallResultsSetPagination
+from oldp.api.mixins import ReviewStatusFilterMixin
 from oldp.apps.accounts.permissions import HasTokenPermission
 from oldp.apps.cases.filters import CaseAPIFilter
 from oldp.apps.cases.models import Case
@@ -25,14 +25,14 @@ from oldp.apps.cases.serializers import (
     CaseSerializer,
 )
 from oldp.apps.cases.services import CaseCreator
+from oldp.apps.search.api import SearchFilter, SearchViewMixin
 from oldp.apps.search.filters import SearchSchemaFilter
 
 logger = logging.getLogger(__name__)
 
 
-class CaseViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for cases.
+class CaseViewSet(ReviewStatusFilterMixin, viewsets.ModelViewSet):
+    """ViewSet for cases.
 
     Supports listing, retrieving, creating, updating, and deleting cases.
 
@@ -47,8 +47,8 @@ class CaseViewSet(viewsets.ModelViewSet):
     - ecli (optional): European Case Law Identifier
     - abstract (optional): Case summary in HTML
     - title (optional): Case title
-    - private (optional): Whether case is private (default: false)
-
+    - source (optional): Object with name (required) and homepage (optional).
+      Looked up by name; created if not found. Default source used when omitted.
     Query parameters:
     - extract_refs (optional): Extract references from content (default: true)
 
@@ -59,8 +59,10 @@ class CaseViewSet(viewsets.ModelViewSet):
     permission_classes = [HasTokenPermission]
     token_resource = "cases"
 
-    pagination_class = SmallResultsSetPagination  # limit page (content field blows up response size)
-    queryset = Case.get_queryset()
+    pagination_class = (
+        SmallResultsSetPagination  # limit page (content field blows up response size)
+    )
+    queryset = Case.objects.all()
     serializer_class = CaseSerializer
     # lookup_field = 'slug'
 
@@ -85,15 +87,20 @@ class CaseViewSet(viewsets.ModelViewSet):
         return CaseSerializer
 
     @method_decorator(cache_page(60))
+    @method_decorator(vary_on_headers("Authorization"))
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
 
     def get_queryset(self):
-        return Case.get_queryset().select_related("court").only(*CASE_API_FIELDS)
+        return (
+            super()
+            .get_queryset()
+            .select_related("court", "created_by_token")
+            .only(*CASE_API_FIELDS, "created_by_token_id", "created_by_token__user_id")
+        )
 
     def create(self, request, *args, **kwargs):
-        """
-        Create a new case.
+        """Create a new case.
 
         The court is automatically resolved from the provided court_name.
         References are extracted from content by default (configurable via extract_refs query param).
@@ -122,6 +129,11 @@ class CaseViewSet(viewsets.ModelViewSet):
         # Create the case using the service
         creator = CaseCreator(extract_refs=extract_refs)
 
+        # Extract optional source info
+        source_data = data.get("source")
+        source_name = source_data["name"] if source_data else None
+        source_homepage = source_data.get("homepage", "") if source_data else None
+
         case = creator.create_case(
             court_name=data["court_name"],
             file_number=data["file_number"],
@@ -131,14 +143,15 @@ class CaseViewSet(viewsets.ModelViewSet):
             ecli=data.get("ecli"),
             abstract=data.get("abstract"),
             title=data.get("title"),
-            private=data.get("private", False),
             api_token=api_token,
             extract_refs=extract_refs,
+            source_name=source_name,
+            source_homepage=source_homepage,
         )
 
-        # Return minimal response with id and slug
+        # Return minimal response with id, slug, and review_status
         response_serializer = CaseCreateResponseSerializer(
-            {"id": case.id, "slug": case.slug}
+            {"id": case.id, "slug": case.slug, "review_status": case.review_status}
         )
 
         logger.info(
@@ -154,34 +167,31 @@ class CaseViewSet(viewsets.ModelViewSet):
 class CaseSearchSchemaFilter(SearchSchemaFilter):
     search_index_class = CaseIndex
 
-    def get_default_schema_fields(self):
+    def get_default_schema_operation_parameters(self):
         return [
-            # Search query field is required
-            coreapi.Field(
-                name="text",
-                location="query",
-                required=True,
-                schema=coreschema.String(
-                    description="Search query on text content (Lucence syntax support)."
-                ),
-                description="",
-                example=[
-                    _("search_example_query1"),
-                    _("search_example_query2"),
-                    _("search_example_query3"),
-                ],
-            )
+            {
+                "name": "text",
+                "required": True,
+                "in": "query",
+                "description": "Search query on text content (Lucence syntax support).",
+                "schema": {
+                    "type": "string",
+                    "example": str(_("search_example_query1")),
+                },
+            }
         ]
 
 
-class CaseSearchViewSet(HaystackViewSet):
+class CaseSearchViewSet(SearchViewMixin, viewsets.GenericViewSet, ListModelMixin):
     """Search view (list only)"""
 
     permission_classes = (AllowAny,)
-    pagination_class = SmallResultsSetPagination  # limit page (content field blows up response size)
-    index_models = [Case]
+    pagination_class = (
+        SmallResultsSetPagination  # limit page (content field blows up response size)
+    )
+    search_models = [Case]
     serializer_class = CaseSearchSerializer
     filter_backends = (
-        HaystackFilter,
+        SearchFilter,
         CaseSearchSchemaFilter,
     )

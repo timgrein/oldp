@@ -73,10 +73,18 @@ class APISubmissionFilter(SimpleListFilter):
 @admin.register(Case)
 class CaseAdmin(ProcessingStepActionsAdmin):
     date_hierarchy = "updated_date"
-    list_display = (case_title, "private", "source", "date", "created_date", "court", "created_by_token")
+    list_display = (
+        case_title,
+        "review_status",
+        "source",
+        "date",
+        "created_date",
+        "court",
+        "created_by_token",
+    )
     list_filter = (
         "source__name",
-        "private",
+        "review_status",
         APISubmissionFilter,
         CourtFilter,
     )  # court
@@ -91,12 +99,18 @@ class CaseAdmin(ProcessingStepActionsAdmin):
         models.TextField: {"widget": Textarea(attrs={"rows": 10, "cols": 200})},
     }
 
+    def lookup_allowed(self, lookup, value):
+        if lookup == "created_date__date":
+            return True
+        return super().lookup_allowed(lookup, value)
+
     def get_queryset(self, request):
         qs = (
             super()
             .get_queryset(request)
             .select_related("court")
             .select_related("source")
+            .select_related("created_by_token")
         )
 
         # Exclude fields

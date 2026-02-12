@@ -54,16 +54,11 @@ dependencies = [
 # -------------------------
 "djangorestframework", #>=3.10.3
 "django-filter", #>=2.1.0
-"drf-haystack", #>=1.8.6
 "djangorestframework-xml", #>=1.4.0
 # djangorestframework==3.10.3
 # django-filter==2.1.0
 # drf-haystack>=1.8.6
 # djangorestframework-xml==1.4.0
-"coreapi==2.3.3",
-"setuptools",
-"coreschema==0.0.4",
-
 # Swagger https://github.com/axnsan12/drf-yasg
 "drf-yasg", #==1.17.1
 "drf-yasg[validation]", #==1.17.1
@@ -76,7 +71,7 @@ dependencies = [
 
 # Git dependencies
 # --------------------------
-"legal-reference-extraction@git+https://github.com/openlegaldata/legal-reference-extraction",
+"legal-reference-extraction@git+https://github.com/openlegaldata/legal-reference-extraction@v0.4.1",
 ]
 
 [project.optional-dependencies]

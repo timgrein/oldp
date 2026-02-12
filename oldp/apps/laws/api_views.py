@@ -1,15 +1,13 @@
-import coreapi
-import coreschema
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_haystack.filters import HaystackFilter
-from drf_haystack.generics import HaystackGenericAPIView
 from rest_framework import status, viewsets
+from rest_framework.generics import GenericAPIView
 from rest_framework.mixins import ListModelMixin
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSetMixin
 
 from oldp.api import SmallResultsSetPagination
+from oldp.api.mixins import ReviewStatusFilterMixin
 from oldp.apps.accounts.permissions import HasTokenPermission
 from oldp.apps.laws.models import Law, LawBook
 from oldp.apps.laws.search_indexes import LawIndex
@@ -21,10 +19,11 @@ from oldp.apps.laws.serializers import (
     LawSerializer,
 )
 from oldp.apps.laws.services import LawBookCreator, LawCreator
+from oldp.apps.search.api import SearchFilter, SearchViewMixin
 from oldp.apps.search.filters import SearchSchemaFilter
 
 
-class LawViewSet(viewsets.ModelViewSet):
+class LawViewSet(ReviewStatusFilterMixin, viewsets.ModelViewSet):
     permission_classes = [HasTokenPermission]
     token_resource = "laws"
 
@@ -47,9 +46,11 @@ class LawViewSet(viewsets.ModelViewSet):
             return LawCreateSerializer
         return LawSerializer
 
+    def get_queryset(self):
+        return super().get_queryset().select_related("created_by_token")
+
     def create(self, request, *args, **kwargs):
-        """
-        Create a new law within a law book.
+        """Create a new law within a law book.
 
         The law book is resolved from book_code (uses latest revision by default).
         """
@@ -83,12 +84,13 @@ class LawViewSet(viewsets.ModelViewSet):
             "id": law.id,
             "slug": law.slug,
             "book_id": law.book_id,
+            "review_status": law.review_status,
         }
 
         return Response(response_data, status=status.HTTP_201_CREATED)
 
 
-class LawBookViewSet(viewsets.ModelViewSet):
+class LawBookViewSet(ReviewStatusFilterMixin, viewsets.ModelViewSet):
     permission_classes = [HasTokenPermission]
     token_resource = "lawbooks"
 
@@ -111,9 +113,11 @@ class LawBookViewSet(viewsets.ModelViewSet):
             return LawBookCreateSerializer
         return LawBookSerializer
 
+    def get_queryset(self):
+        return super().get_queryset().select_related("created_by_token")
+
     def create(self, request, *args, **kwargs):
-        """
-        Create a new law book.
+        """Create a new law book.
 
         If this revision is newer than existing revisions for the same code,
         it automatically becomes the 'latest' revision.
@@ -144,6 +148,7 @@ class LawBookViewSet(viewsets.ModelViewSet):
             "id": lawbook.id,
             "slug": lawbook.slug,
             "latest": lawbook.latest,
+            "review_status": lawbook.review_status,
         }
 
         return Response(response_data, status=status.HTTP_201_CREATED)
@@ -152,28 +157,26 @@ class LawBookViewSet(viewsets.ModelViewSet):
 class LawSearchSchemaFilter(SearchSchemaFilter):
     search_index_class = LawIndex
 
-    def get_default_schema_fields(self):
+    def get_default_schema_operation_parameters(self):
         return [
-            # Search query field is required
-            coreapi.Field(
-                name="text",
-                location="query",
-                required=True,
-                schema=coreschema.String(
-                    description="Search query on text content (Lucence syntax support)."
-                ),
-            )
+            {
+                "name": "text",
+                "required": True,
+                "in": "query",
+                "description": "Search query on text content (Lucence syntax support).",
+                "schema": {"type": "string"},
+            }
         ]
 
 
-class LawSearchViewSet(ListModelMixin, ViewSetMixin, HaystackGenericAPIView):
+class LawSearchViewSet(SearchViewMixin, ListModelMixin, ViewSetMixin, GenericAPIView):
     """Search view"""
 
     permission_classes = (AllowAny,)
     pagination_class = SmallResultsSetPagination  # limit page (other content field blows up response size)
-    index_models = [Law]
+    search_models = [Law]
     serializer_class = LawSearchSerializer
     filter_backends = (
-        HaystackFilter,
+        SearchFilter,
         LawSearchSchemaFilter,
     )
