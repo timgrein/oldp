@@ -241,7 +241,7 @@ class BaseConfiguration(Configuration):
 
     PAGINATE_BY = 50  # Items per page
 
-    PAGINATE_UNTIL = 20  # Max. number of pages
+    PAGINATE_UNTIL = 10  # Max. number of pages
 
     DATABASES = values.DatabaseURLValue("sqlite:///dev.db")
 
@@ -307,12 +307,19 @@ class BaseConfiguration(Configuration):
                 "http://localhost:9200/", environ_name="ELASTICSEARCH_URL"
             ),
             "INDEX_NAME": values.Value("oldp", environ_name="ELASTICSEARCH_INDEX"),
+            "TIMEOUT": 10,
             "KWARGS": {
-                # 'verify_certs': False,  # Ignore certificate verification
-                # 'request_timeout': 30,  # Optional: Adjust timeout as needed
-                # 'connection_class': 'opensearchpy.connection.Connection',
+                "retry_on_timeout": True,
+                "max_retries": 1,
             },
         },
+    }
+
+    ELASTICSEARCH_INDEX_SETTINGS = {
+        "settings": {
+            "number_of_replicas": 0,
+            "refresh_interval": "60s",
+        }
     }
 
     # Logging
@@ -550,12 +557,12 @@ class TestConfiguration(BaseConfiguration):
     ELASTICSEARCH_INDEX = values.Value("oldp_test")
 
     # Control mocking: True = use mocks (default), False = use real ES
-    MOCK_ES_TESTS = values.BooleanValue(True, environ_name="MOCK_ES_TESTS")
+    MOCK_ES_TESTS = values.BooleanValue(True)
 
     # Enable ES tests by default (they now run with mocks)
-    TEST_WITH_ES = True
-    TEST_WITH_WEB = False
-    TEST_WITH_SELENIUM = False
+    TEST_WITH_ES = values.BooleanValue(True)
+    TEST_WITH_WEB = values.BooleanValue(False)
+    TEST_WITH_SELENIUM = values.BooleanValue(False)
 
     @property
     def HAYSTACK_CONNECTIONS(self):
