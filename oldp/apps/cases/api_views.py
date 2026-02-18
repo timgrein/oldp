@@ -1,7 +1,6 @@
 import logging
 
 from django.utils.decorators import method_decorator
-from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_headers
 from django_filters.rest_framework import DjangoFilterBackend
@@ -174,10 +173,7 @@ class CaseSearchSchemaFilter(SearchSchemaFilter):
                 "required": True,
                 "in": "query",
                 "description": "Search query on text content (Lucence syntax support).",
-                "schema": {
-                    "type": "string",
-                    "example": str(_("search_example_query1")),
-                },
+                "schema": {"type": "string"},
             }
         ]
 
