@@ -10,12 +10,12 @@ from django.utils.translation import gettext_lazy as _
 
 from oldp.apps.cases.models import Case
 from oldp.apps.laws.models import Law, LawBook
-from oldp.utils.cache_per_user import cache_per_user
+from oldp.utils.cache_per_user import cache_per_role
 
 logger = logging.getLogger(__name__)
 
 
-@cache_per_user(settings.CACHE_TTL)
+@cache_per_role(settings.CACHE_TTL)
 def view_index(request, char=None):
     page = request.GET.get("page")
     items = LawBook.objects.filter(
@@ -61,18 +61,18 @@ def view_index(request, char=None):
 def get_latest_law_book(book_slug):
     """Law book by slug and latest=true (logs warning if multiple instances exist)"""
     candidates = LawBook.objects.filter(slug=book_slug, latest=True)
+    book = candidates.first()
 
-    if len(candidates) == 0:
+    if book is None:
         logger.info("Law book not found: %s", book_slug)
         raise Http404()
-    else:
-        # This should usually not happen, but better check it...
-        if len(candidates) > 1:
-            logger.warning(
-                "Book has more than one instance with latest=true: {}".format(book_slug)
-            )
 
-        return candidates[0]
+    if candidates.count() > 1:
+        logger.warning(
+            "Book has more than one instance with latest=true: %s", book_slug
+        )
+
+    return book
 
 
 def get_law_book(request, book_slug):
@@ -100,25 +100,43 @@ def get_law_book(request, book_slug):
         return get_latest_law_book(book_slug)
 
 
-@cache_per_user(settings.CACHE_TTL)
+@cache_per_role(settings.CACHE_TTL)
 def view_book(request, book_slug):
     book = get_law_book(request, book_slug)
+    section_titles = book.get_sections()
+    revision_dates = list(book.get_revision_dates())
 
-    items = Law.objects.filter(book=book).select_related("book").order_by("order")
+    items_qs = (
+        Law.objects.filter(book=book)
+        .select_related("book")
+        .defer(*Law.defer_fields_list_view)
+        .order_by("order")
+    )
+    items = list(items_qs)
+    for item in items:
+        item.display_section = section_titles.get(str(item.order))
 
     return render(
         request,
         "laws/book.html",
-        {"items": items, "book": book, "title": book.get_title(), "nav": "laws"},
+        {
+            "items": items,
+            "book": book,
+            "revision_dates": revision_dates,
+            "title": book.get_title(),
+            "nav": "laws",
+        },
     )
 
 
-@cache_per_user(settings.CACHE_TTL)
+@cache_per_role(settings.CACHE_TTL)
 def view_law(request, law_slug, book_slug):
     book = get_law_book(request, book_slug)
     item = get_object_or_404(
         Law.objects.select_related("book", "previous"), slug=law_slug, book=book
     )
+    revision_dates = list(book.get_revision_dates())
+    related_laws = item.get_related()
 
     referencing_cases = item.get_referencing_cases(
         Case.get_queryset(request).defer(*Case.defer_fields_list_view)
@@ -131,6 +149,8 @@ def view_law(request, law_slug, book_slug):
             "nav": "laws",
             "item": item,
             "title": item.get_title(),
+            "revision_dates": revision_dates,
+            "related_laws": related_laws,
             "referencing_cases": referencing_cases,
         },
     )

@@ -1,3 +1,7 @@
+from django.conf import settings
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie, vary_on_headers
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
 from rest_framework.generics import GenericAPIView
@@ -46,8 +50,14 @@ class LawViewSet(ReviewStatusFilterMixin, viewsets.ModelViewSet):
             return LawCreateSerializer
         return LawSerializer
 
+    @method_decorator(cache_page(settings.CACHE_TTL))
+    @method_decorator(vary_on_headers("Authorization", "Accept-Language", "Host"))
+    @method_decorator(vary_on_cookie)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+
     def get_queryset(self):
-        return super().get_queryset().select_related("created_by_token")
+        return super().get_queryset().select_related("book", "created_by_token")
 
     def create(self, request, *args, **kwargs):
         """Create a new law within a law book.
@@ -113,8 +123,16 @@ class LawBookViewSet(ReviewStatusFilterMixin, viewsets.ModelViewSet):
             return LawBookCreateSerializer
         return LawBookSerializer
 
+    @method_decorator(cache_page(settings.CACHE_TTL))
+    @method_decorator(vary_on_headers("Authorization", "Accept-Language", "Host"))
+    @method_decorator(vary_on_cookie)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+
     def get_queryset(self):
-        return super().get_queryset().select_related("created_by_token")
+        return super().get_queryset().select_related("created_by_token").defer(
+            "changelog", "footnotes", "sections"
+        )
 
     def create(self, request, *args, **kwargs):
         """Create a new law book.
@@ -180,3 +198,9 @@ class LawSearchViewSet(SearchViewMixin, ListModelMixin, ViewSetMixin, GenericAPI
         SearchFilter,
         LawSearchSchemaFilter,
     )
+
+    @method_decorator(cache_page(settings.CACHE_TTL))
+    @method_decorator(vary_on_headers("Authorization", "Accept-Language", "Host"))
+    @method_decorator(vary_on_cookie)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
