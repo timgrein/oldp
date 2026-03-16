@@ -22,7 +22,7 @@ VENV_BIN=$(VENV_DIR)/bin
 VENV_PYTHON=$(VENV_BIN)/python
 VENV_PKG_MANAGER=$(VENV_BIN)/$(PYTHON_PKG_MANAGER)
 
-.PHONY: help venv clean-venv install lint lint-check test test-coverage docs build-image test-image up up-services restart logs migrate load-dummy-data load-dummy-users rebuild-index compile-locale
+.PHONY: help venv clean-venv install lint lint-check test test-coverage docs build-image test-image up up-with-data up-services restart logs migrate load-dummy-data load-dummy-users rebuild-index compile-locale
 
 help:
 	@echo "Available commands:"
@@ -41,6 +41,7 @@ help:
 	@echo "  make test-image        - Test container image"
 	@echo "  make push-image        - Push container image to registry"
 	@echo "  make up                - Start all services"
+	@echo "  make up-with-data      - Start all services with sample data"
 	@echo "  make up-services       - Start db and search services only"
 	@echo "  make migrate           - Apply database migrations"
 	@echo "  make load-dummy-data   - Load test fixtures"
@@ -152,6 +153,43 @@ up:
 	@echo "--- 🚀 Container compose up: all services ---"
 	@echo "Web server will start at: http://localhost:8000"
 	$(CONTAINER_ENGINE) compose up -d
+
+up-with-data:
+	@echo "--- 🚀 Starting all services with sample data ---"
+	@echo "Web server will start at: http://localhost:8000"
+	$(CONTAINER_ENGINE) compose up -d
+	@echo "--- ⏳ Waiting for services to be ready ---"
+	@sleep 5
+	@echo "--- 🔨 Waiting for app container to be healthy ---"
+	@until $(CONTAINER_ENGINE) compose exec -T app python manage.py check --database default >/dev/null 2>&1; do \
+		echo "Waiting for database..."; \
+		sleep 2; \
+	done
+	@echo "--- 🔨 Running database migrations ---"
+	$(CONTAINER_ENGINE) compose exec -T app python manage.py migrate
+	@echo "--- 🔨 Loading sample data ---"
+	$(CONTAINER_ENGINE) compose exec -T app python manage.py loaddata \
+		locations/countries.json \
+		locations/states.json \
+		locations/cities.json \
+		courts/courts.json \
+		laws/laws.json \
+		cases/cases.json
+	$(CONTAINER_ENGINE) compose exec -T app python manage.py load_dummy_api_cases
+	@echo "--- 🔨 Loading dummy users (admin/admin, user/user) ---"
+	$(CONTAINER_ENGINE) compose exec -T app python manage.py load_dummy_users
+	@echo "--- ⏳ Waiting for Elasticsearch to be ready ---"
+	@until curl -s http://localhost:9200/_cluster/health >/dev/null 2>&1; do \
+		echo "Waiting for Elasticsearch..."; \
+		sleep 2; \
+	done
+	@echo "--- 🔨 Rebuilding search index ---"
+	$(CONTAINER_ENGINE) compose exec -T app python manage.py rebuild_index --noinput
+	@echo ""
+	@echo "✅ OLDP is ready with sample data!"
+	@echo "📖 Open http://localhost:8000 in your browser"
+	@echo "🔐 Login with admin/admin or user/user"
+	@echo "🔍 Try searching at http://localhost:8000/search/"
 
 up-services:
 	@echo "--- 🚀 Container compose up: db search (all non-app services) ---"
